@@ -51,6 +51,8 @@
   // aimed at a public one.
   const override = new URLSearchParams(location.search).get('relay');
   if (override) { window.PORTAL_RELAY_URL = override; }
+  const chain = new URLSearchParams(location.search).get('chain');
+  if (chain) { window.PORTAL_CHAIN_SOURCE = chain; }
 </script>
 <script src="wasm_exec.js"></script>
 <script>

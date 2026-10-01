@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/gosuda/portal-tunnel/v2/portal"
+	"github.com/gosuda/portal-tunnel/v2/utils"
 )
 
 func main() {
@@ -83,6 +84,28 @@ func main() {
 
 	page := http.NewServeMux()
 	page.Handle("/", http.FileServer(http.Dir(webDir())))
+	// Reads a relay's certificate chain off a TLS handshake and hands it to the page.
+	// Not part of the relay: anything that can open a socket can serve this, because the
+	// chain is what the relay already shows every visitor.
+	page.HandleFunc("/chain", func(w http.ResponseWriter, r *http.Request) {
+		host := r.URL.Query().Get("host")
+		if host == "" {
+			host = r.URL.Query().Get("")
+		}
+		if host == "" {
+			http.Error(w, "host is required", http.StatusBadRequest)
+			return
+		}
+		chain, err := utils.FetchEndpointCertificateChain(r.Context(), "https://"+host, host)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Content-Type", "application/x-pem-file")
+		_, _ = w.Write(chain)
+	})
+
 	page.HandleFunc("/relay.js", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/javascript")
 		fmt.Fprintf(w, "window.PORTAL_RELAY_URL = %q;\n", relayURL)
