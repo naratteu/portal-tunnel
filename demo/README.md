@@ -5,6 +5,7 @@ browser tab. No socket anywhere: the reverse session rides a WebSocket, tenant T
 in the tab, and the handler answers in the same runtime.
 
 ```bash
+GOOS=js GOARCH=wasm go build -o demo/web/connector.wasm ./demo/wasm
 go run ./demo                       # relay + the page, prints RELAY_SNI / RELAY_CERT / PAGE
 # open PAGE in a browser; it prints the public URL it was given
 go run ./demo/visitor 127.0.0.1:31443 <RELAY_CERT> <PUBLIC_URL>

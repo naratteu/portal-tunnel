@@ -19,9 +19,12 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -84,6 +87,12 @@ func main() {
 
 	page := http.NewServeMux()
 	page.Handle("/", http.FileServer(http.Dir(webDir())))
+
+	// Served straight out of the Go distribution rather than vendored into the tree.
+	page.HandleFunc("/wasm_exec.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		http.ServeFile(w, r, filepath.Join(goroot(), "lib", "wasm", "wasm_exec.js"))
+	})
 	// Reads a relay's certificate chain off a TLS handshake and hands it to the page.
 	// Not part of the relay: anything that can open a socket can serve this, because the
 	// chain is what the relay already shows every visitor.
@@ -128,6 +137,17 @@ func serve(port int, handler http.Handler) {
 	if err := http.ListenAndServe("127.0.0.1:"+strconv.Itoa(port), handler); err != nil {
 		log.Printf("listen %d: %v", port, err)
 	}
+}
+
+func goroot() string {
+	if dir := os.Getenv("GOROOT"); dir != "" {
+		return dir
+	}
+	out, err := exec.Command("go", "env", "GOROOT").Output()
+	if err != nil {
+		return runtime.GOROOT()
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func webDir() string {
