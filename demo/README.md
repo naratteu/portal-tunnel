@@ -31,8 +31,11 @@ go run ./demo/visitor 127.0.0.1:31443 <RELAY_CERT> <PUBLIC_URL>
 
 - `/sdk/connect` accepts a WebSocket upgrade alongside the existing hijack. Both end in the
   same `lease.stream.OfferConn(conn)`; the relay still carries ciphertext it cannot read.
-  The capability moves to the query string there, because a browser's WebSocket constructor
-  cannot set request headers.
+  The capability rides a WebSocket subprotocol there, because a browser's constructor cannot
+  set request headers but can offer subprotocols - and unlike a query string, that keeps a
+  bearer token out of access logs and browser history. The client offers
+  `["portal.reverse.v1", "<capability>"]` and the relay selects only the marker, so the
+  handshake response never echoes it back.
 - `/sdk/certificate-chain` serves the chain the relay already presents to every visitor. The
   socket client reads it off a handshake, which a browser cannot do.
 
@@ -60,6 +63,6 @@ constructor cannot set, so it is already unauthorized before transport is consid
 there is no WebSocket branch behind it either.
 
 That makes the whole ask a single change with one shape: accept the reverse session over a
-WebSocket, with the capability somewhere a browser can put it. The relay still receives
+WebSocket, with the capability in a subprotocol rather than a header. The relay still receives
 ciphertext it cannot read, tenant TLS still terminates in the connector, and `--ban-mitm`
 still applies.

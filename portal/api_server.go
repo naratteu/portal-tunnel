@@ -512,6 +512,27 @@ func (s *Server) handleReverseEndpoint(w http.ResponseWriter, r *http.Request) {
 	utils.WriteAPIData(w, http.StatusOK, endpoint)
 }
 
+// A browser offers ["portal.reverse.v1", "<capability>"]: the first names the protocol,
+// the second carries the credential. Both are subprotocol tokens, which is what the
+// WebSocket constructor can set and a JWT happens to be a valid one.
+func reverseCapabilityFromSubprotocols(r *http.Request) string {
+	var marked bool
+	var capability string
+	for _, raw := range strings.Split(r.Header.Get("Sec-WebSocket-Protocol"), ",") {
+		switch value := strings.TrimSpace(raw); value {
+		case "":
+		case types.ReverseSubprotocol:
+			marked = true
+		default:
+			capability = value
+		}
+	}
+	if !marked {
+		return ""
+	}
+	return capability
+}
+
 // The existing reverse transport asks for "Upgrade: raw"; this distinguishes the
 // WebSocket one from it.
 func isWebSocketUpgrade(r *http.Request) bool {
@@ -537,9 +558,10 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	capability := strings.TrimSpace(r.Header.Get(types.HeaderReverseCapability))
 	if capability == "" {
-		// A browser's WebSocket constructor cannot set request headers, so the
-		// capability travels in the query string on that path.
-		capability = strings.TrimSpace(r.URL.Query().Get("capability"))
+		// A browser's WebSocket constructor cannot set request headers, but it can offer
+		// subprotocols, and those travel as one. Keeping the capability out of the URL
+		// keeps a bearer token out of access logs and browser history.
+		capability = reverseCapabilityFromSubprotocols(r)
 	}
 	clientIP := s.registry.policy.ExtractClientIP(r)
 	if s.overlay != nil && s.overlay.Handles(capability) {
@@ -562,6 +584,9 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if isWebSocketUpgrade(r) {
 		socket, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 			InsecureSkipVerify: true, // the capability is the credential; origin is not
+			// Only the marker is selected, so the handshake response never echoes the
+			// capability back.
+			Subprotocols: []string{types.ReverseSubprotocol},
 		})
 		if err != nil {
 			return

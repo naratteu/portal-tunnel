@@ -8,6 +8,8 @@ import (
 	"net/url"
 
 	"github.com/coder/websocket"
+
+	"github.com/gosuda/portal-tunnel/v2/types"
 )
 
 // WebSocketReverseDialer opens the reverse session over a WebSocket instead of a
@@ -30,11 +32,15 @@ func WebSocketReverseDialer(tlsConfig *tls.Config) ReverseDialer {
 		case "http":
 			target.Scheme = "ws"
 		}
-		query := target.Query()
-		query.Set("capability", capability)
-		target.RawQuery = query.Encode()
+		options := reverseDialOptions(tlsConfig)
+		if options == nil {
+			options = &websocket.DialOptions{}
+		}
+		// The capability travels as a subprotocol rather than in the URL: a browser cannot
+		// set request headers, and a query string would put a bearer token in access logs.
+		options.Subprotocols = []string{types.ReverseSubprotocol, capability}
 
-		socket, _, err := websocket.Dial(ctx, target.String(), reverseDialOptions(tlsConfig))
+		socket, _, err := websocket.Dial(ctx, target.String(), options)
 		if err != nil {
 			return nil, fmt.Errorf("dial reverse websocket: %w", err)
 		}

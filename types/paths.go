@@ -34,7 +34,10 @@ const (
 	PathSDKUnregister        = PathSDKPrefix + "/unregister"
 	PathSDKConnect           = PathSDKPrefix + "/connect"
 	PathSDKCertificateChain  = PathSDKPrefix + "/certificate-chain"
-	PathSDKCache             = PathSDKPrefix + "/cache"
+
+	// ReverseSubprotocol marks a WebSocket reverse session; the capability rides beside it.
+	ReverseSubprotocol = "portal.reverse.v1"
+	PathSDKCache       = PathSDKPrefix + "/cache"
 
 	PathDiscovery         = "/discovery"
 	PathDiscoveryAnnounce = PathDiscovery + "/announce"
