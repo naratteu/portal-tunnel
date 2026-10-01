@@ -44,6 +44,7 @@ type listenerConfig struct {
 	TCPEnabled bool
 	BanMITM    bool
 	Metadata   types.LeaseMetadata
+	Reverse    ReverseDialer
 }
 
 type listenerStatus struct {
@@ -125,6 +126,7 @@ type listener struct {
 	udpEnabled        bool
 	tcpEnabled        bool
 	banMITM           bool
+	reverseDialer     ReverseDialer
 	cache             *cache.Source
 
 	stream        *transport.ClientStream
@@ -168,6 +170,7 @@ func newListener(ctx context.Context, relayURL string, cfg listenerConfig) (*lis
 		udpEnabled:    cfg.UDPEnabled,
 		tcpEnabled:    cfg.TCPEnabled,
 		banMITM:       cfg.BanMITM,
+		reverseDialer: cfg.Reverse,
 		cache:         cfg.Cache,
 		api:           &apiClient{relayURL: relayurl},
 		lease:         utils.NewSnapshot(listenerSnapshot{}, listenerSnapshot.snapshot),
@@ -808,6 +811,9 @@ func (l *listener) openReverseSession(ctx context.Context) (net.Conn, error) {
 	reverseURL, err := url.Parse(lease.reverse.URL)
 	if err != nil {
 		return nil, fmt.Errorf("parse reverse endpoint: %w", err)
+	}
+	if l.reverseDialer != nil {
+		return l.reverseDialer(ctx, reverseURL, lease.reverse.Capability)
 	}
 	reverseTLS, err := l.reverseTLSConfig(ctx, reverseURL)
 	if err != nil {

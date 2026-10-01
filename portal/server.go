@@ -220,6 +220,7 @@ type Server struct {
 	acmeManager *acme.Manager
 	proxy       proxy
 	apiKeyPEM   []byte
+	apiCertPEM  []byte
 
 	apiHandoff       *handoffListener
 	sniListener      net.Listener
@@ -742,6 +743,9 @@ func (s *Server) prepareAPITLS(ctx context.Context) (*tls.Config, *acme.Manager,
 	// The /v1/sign transcript signer shares the API listener key; newAPIServer
 	// reads the PEM to build its handler.
 	s.apiKeyPEM = keyPEM
+	// Served verbatim by the certificate-chain endpoint: a connector without sockets
+	// cannot read it off a TLS handshake, and it is public either way.
+	s.apiCertPEM = certPEM
 
 	apiTLS := &tls.Config{
 		Certificates: []tls.Certificate{cert},

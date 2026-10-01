@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -123,6 +124,7 @@ type options struct {
 
 	discoveryEnabled bool
 	maxActiveRelays  int
+	reverseDialer    ReverseDialer
 }
 
 // Option configures an optional capability of a relay-backed exposure.
@@ -148,6 +150,17 @@ func WithTCP() Option {
 // WithMITMProtection controls relay MITM self-probing. The probe requires a
 // relay tenant TLS stack that exports keying material; exposures with this
 // option enabled fail at start against relays whose stack does not.
+// ReverseDialer opens the reverse session to a relay. The default dials TCP, runs
+// relay TLS and upgrades with HTTP/1.1 "Upgrade: raw" - none of which a browser can
+// do. Supplying one lets the connector run somewhere without sockets, as long as the
+// relay accepts that transport too.
+type ReverseDialer func(ctx context.Context, endpoint *url.URL, capability string) (net.Conn, error)
+
+// WithReverseDialer replaces how the reverse session is opened.
+func WithReverseDialer(dialer ReverseDialer) Option {
+	return func(o *options) { o.reverseDialer = dialer }
+}
+
 func WithMITMProtection(enabled bool) Option {
 	return func(opts *options) { opts.BanMITM = enabled }
 }
@@ -1109,6 +1122,7 @@ func (e *Exposure) reconcileRelayListeners(failOnError bool) error {
 			TCPEnabled: e.options.TCPEnabled,
 			BanMITM:    e.options.BanMITM,
 			Metadata:   e.metadata.Copy(),
+			Reverse:    e.options.reverseDialer,
 		})
 		if err != nil {
 			e.setRelayStatus(relayURL, listenerStatus{state: RelayFailed, err: err})

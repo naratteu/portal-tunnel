@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/rs/zerolog/log"
 
 	"github.com/gosuda/portal-tunnel/v2/portal/discovery"
@@ -143,6 +144,8 @@ func (s *Server) apiHandler(base http.Handler, keylessSigner *keyless.Signer) ht
 				return
 			}
 			s.handleDomain(w, r)
+		case types.PathSDKCertificateChain:
+			s.handleCertificateChain(w, r)
 		case types.PathSDKRegisterChallenge:
 			s.handleRegisterChallenge(w, r)
 		case types.PathSDKRegister:
@@ -191,6 +194,21 @@ func (s *Server) handleRoot(w http.ResponseWriter, _ *http.Request) {
 		"service": "portal-relay",
 		"root":    s.identity.Name,
 	})
+}
+
+// The chain the relay presents to visitors. The socket-based client reads it off a TLS
+// handshake; one running in a browser has no socket to read it from, and it is public
+// material in both cases.
+func (s *Server) handleCertificateChain(w http.ResponseWriter, r *http.Request) {
+	if !utils.RequireMethod(w, r, http.MethodGet) {
+		return
+	}
+	if len(s.apiCertPEM) == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "application/x-pem-file")
+	_, _ = w.Write(s.apiCertPEM)
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
@@ -494,6 +512,20 @@ func (s *Server) handleReverseEndpoint(w http.ResponseWriter, r *http.Request) {
 	utils.WriteAPIData(w, http.StatusOK, endpoint)
 }
 
+// The existing reverse transport asks for "Upgrade: raw"; this distinguishes the
+// WebSocket one from it.
+func isWebSocketUpgrade(r *http.Request) bool {
+	if !strings.EqualFold(strings.TrimSpace(r.Header.Get("Upgrade")), "websocket") {
+		return false
+	}
+	for _, token := range strings.Split(r.Header.Get("Connection"), ",") {
+		if strings.EqualFold(strings.TrimSpace(token), "upgrade") {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	if !utils.RequireMethod(w, r, http.MethodGet) {
 		return
@@ -504,6 +536,11 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	capability := strings.TrimSpace(r.Header.Get(types.HeaderReverseCapability))
+	if capability == "" {
+		// A browser's WebSocket constructor cannot set request headers, so the
+		// capability travels in the query string on that path.
+		capability = strings.TrimSpace(r.URL.Query().Get("capability"))
+	}
 	clientIP := s.registry.policy.ExtractClientIP(r)
 	if s.overlay != nil && s.overlay.Handles(capability) {
 		client, gateway := s.overlay.HandleConnect(w, r, capability, clientIP)
@@ -516,6 +553,28 @@ func (s *Server) handleConnect(w http.ResponseWriter, r *http.Request) {
 	lease, err := s.registry.admitReverseCapability(capability)
 	if err != nil {
 		writeAPIErrorResponse(w, err)
+		return
+	}
+
+	// A connector without sockets - a WebAssembly page, say - cannot dial TCP and
+	// upgrade to a raw stream, but it can open a WebSocket. Either way what the
+	// relay hands onward is a net.Conn carrying the same ciphertext.
+	if isWebSocketUpgrade(r) {
+		socket, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+			InsecureSkipVerify: true, // the capability is the credential; origin is not
+		})
+		if err != nil {
+			return
+		}
+		conn := websocket.NetConn(context.Background(), socket, websocket.MessageBinary)
+		if err := lease.stream.OfferConn(conn); err != nil {
+			log.Warn().Err(err).Str("address", lease.Address).Msg("sdk reverse rejected")
+			_ = conn.Close()
+			return
+		}
+		s.registry.Touch(lease.Key(), clientIP, time.Now())
+		log.Info().Str("address", lease.Address).Str("lease_name", lease.Name).
+			Int("ready", lease.stream.ReadyCount()).Msg("sdk reverse connected over websocket")
 		return
 	}
 
