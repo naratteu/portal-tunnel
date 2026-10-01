@@ -46,24 +46,33 @@ sockets, not a request for the relay to decrypt anything.
 
 ## Against a public relay
 
-Tried, on the stock `gosunuts.xyz` from the registry. It gets further than expected and
-stops in exactly one place.
+Tried on the relays in the project's own `registry.json`, from a browser, with the
+certificate chain supplied from off the relay. Every one of them behaves the same way.
 
-| step | stock public relay |
+| step | public relays |
 | --- | --- |
-| register a lease | works — the control plane sends `Access-Control-Allow-Origin: *`, and the relay issued a real capability for `browser:0xd4e2…` |
-| keyless materials | works — the certificate chain is public, so it can come from anywhere that can complete a handshake with the relay. `/chain` in this demo does exactly that, off the relay |
-| reverse session | **rejected**: `wss://gosunuts.xyz/sdk/connect?capability=… failed: Unexpected response code: 403` |
+| register a lease | works — the control plane sends `Access-Control-Allow-Origin: *`, and the relay issues a real capability |
+| keyless materials | works — the chain is public, so it can come from anywhere that can complete a handshake with the relay; `/chain` in this demo does exactly that, off the relay |
+| reverse session | **rejected**: `wss://<relay>/sdk/connect failed: Unexpected response code: 403` |
 
 So `/sdk/certificate-chain` is a convenience, not a requirement — a connector can obtain the
-chain by other means, and this demo proves it against the real relay.
+chain by other means, which this demo does against the real relays.
 
-The one thing that genuinely needs the relay is the reverse session. `handleConnect` reads the
-capability from the `X-Portal-Reverse-Capability` header, which a browser's WebSocket
-constructor cannot set, so it is already unauthorized before transport is considered - and
-there is no WebSocket branch behind it either.
+The reverse session is the only thing that genuinely needs the relay, and it needs two small
+pieces, both of them necessary:
 
-That makes the whole ask a single change with one shape: accept the reverse session over a
-WebSocket, with the capability in a subprotocol rather than a header. The relay still receives
-ciphertext it cannot read, tenant TLS still terminates in the connector, and `--ban-mitm`
-still applies.
+1. **Somewhere to put the capability.** `handleConnect` reads it from the
+   `X-Portal-Reverse-Capability` header, and a browser's WebSocket constructor cannot set
+   request headers. It can offer subprotocols, so the client offers
+   `["portal.reverse.v1", "<capability>"]` and the relay selects only the marker — which also
+   keeps a bearer token out of access logs and browser history, where a query string would
+   have put it.
+
+2. **A WebSocket handshake behind it.** Moving the capability alone is not enough. With only
+   the first piece the relay authorises the session, hijacks, answers
+   `101 Switching Protocols / Upgrade: raw` and logs `sdk reverse connected` — while the
+   browser rejects the handshake with `'Upgrade' header value is not 'WebSocket': raw`. The
+   relay then holds a session the client has already abandoned.
+
+Neither piece touches the trust model: the relay still carries ciphertext it cannot read,
+tenant TLS still terminates in the connector, and `--ban-mitm` still applies.

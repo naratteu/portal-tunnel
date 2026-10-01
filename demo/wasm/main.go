@@ -19,6 +19,10 @@ import (
 
 func main() {
 	relayURL := js.Global().Get("PORTAL_RELAY_URL").String()
+	name := "browser"
+	if value := js.Global().Get("PORTAL_NAME"); value.Type() == js.TypeString && value.String() != "" {
+		name = value.String()
+	}
 	report := func(stage, detail string) {
 		js.Global().Call("portalReport", stage, detail)
 	}
@@ -26,7 +30,7 @@ func main() {
 	go func() {
 		ctx := context.Background()
 
-		id, err := identity.Generate("browser")
+		id, err := identity.Generate(name)
 		if err != nil {
 			report("error", "identity: "+err.Error())
 			return

@@ -53,6 +53,8 @@
   if (override) { window.PORTAL_RELAY_URL = override; }
   const chain = new URLSearchParams(location.search).get('chain');
   if (chain) { window.PORTAL_CHAIN_SOURCE = chain; }
+  const name = new URLSearchParams(location.search).get('name');
+  if (name) { window.PORTAL_NAME = name; }
 </script>
 <script src="wasm_exec.js"></script>
 <script>
