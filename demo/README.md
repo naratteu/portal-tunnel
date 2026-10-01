@@ -47,7 +47,13 @@ sockets, not a request for the relay to decrypt anything.
 ## Against a public relay
 
 Tried on the relays in the project's own `registry.json`, from a browser, with the
-certificate chain supplied from off the relay. Every one of them behaves the same way.
+certificate chain supplied from off the relay, and an identity name randomised per run so
+nothing squats a name someone wants.
+
+Seven of the eight behave identically, across both release versions in the registry
+(v2.5.0 and v2.5.1, protocol 10). The eighth, `portal.thumbgo.kr`, rate-limited the probe
+with 429 and still does after a backoff - it registered fine, but the run never reached the
+reverse session. That is the operator's prerogative and was not pursued further.
 
 | step | public relays |
 | --- | --- |
